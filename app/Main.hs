@@ -17,71 +17,46 @@ import GHC.Float (int2Double)
 main :: IO ()
 main = putStrLn "Hello, Haskell!"
 
-runBox :: [Box (Maybe Double)]
-runBox = runST $ do
-  screen <- box
-  constrain screen [top 0, left 0, width 1640, height 893]
+data Box a = Box
+  { _width :: a,
+    _height :: a,
+    _top :: a,
+    _bottom :: a,
+    _left :: a,
+    _right :: a,
+    _centerX :: a,
+    _centerY :: a
+  }
+  deriving (Show, Eq, Functor, Foldable, Traversable)
 
-  a <- box
-  b <- box
-  c <- box
+box :: ST s (Box (Cell s Double))
+box = do
+  w <- cell
+  h <- cell
+  t <- cell
+  l <- cell
+  b <- cell
+  r <- cell
+  cx <- cell
+  cy <- cell
 
-  same _left [a, screen]
-  same _centerY [a, screen]
-  with (_width screen) (\screenWidth -> constrain a [width (screenWidth / 5), height (screenWidth / 5)])
+  lift2 (\n m -> m - n) l r w
+  lift2 (\n m -> m + n) w l r
+  lift2 (\n m -> m - n) w r l
+  lift2 (\n m -> n + m / 2) l w cx
+  lift2 (\n m -> n - m / 2) cx w l
+  lift2 (\n m -> (m - n) * 2) l cx w
+  lift2 (\n m -> (n - m) * 2) r cx w
 
-  same _width [a, b, c]
-  same _height [a, b, c]
-  same _top [a, b, c]
+  lift2 (\n m -> m - n) t b h
+  lift2 (\n m -> m + n) h t b
+  lift2 (\n m -> m - n) h b t
+  lift2 (\n m -> n + m / 2) t h cy
+  lift2 (\n m -> n - m / 2) cy h t
+  lift2 (\n m -> (m - n) * 2) t cy h
+  lift2 (\n m -> (n - m) * 2) b cy h
 
-  same _right [c, screen]
-
-  watch2 (_right a) (_left c) (\aRight bLeft -> centerX ((aRight + bLeft) / 2) b)
-
-  combine [a, b, c]
-
-iphone :: [Box (Maybe Double)]
-iphone = runST $ do
-  screen <- box
-  constrain screen [left 0, top 0, width 375, height 812]
-
-  Just screenWidth <- content (_width screen)
-
-  (appRowContainer : appRow) <- row 4 makeApp
-  constrain appRowContainer [left 28, right (screenWidth - 28)]
-  combine appRow
-
-makeApp :: ST s (Box (Cell s Double))
-makeApp = do
-  appIcon <- box
-  constrain appIcon [width 58, height 58]
-  return appIcon
-
-row :: Int -> ST s (Box (Cell s Double)) -> ST s [Box (Cell s Double)]
-row n b = do
-  container <- box
-
-  b1 <- b
-  boxes <- replicateM n b
-
-  same _height [container, b1]
-
-  watch2
-    (_left container)
-    (_width container)
-    ( \containerLeft containerWidth ->
-        with
-          (_width b1)
-          ( \bWidth ->
-              for_
-                (zip [0 ..] boxes)
-                ( \(x, b') ->
-                    left (containerLeft + ((((containerWidth - ((int2Double n) * bWidth)) / ((int2Double n) - 1)) + bWidth) * x)) b'
-                )
-          )
-    )
-
-  pure $ (container : boxes)
+  return $ Box w h t b l r cx cy
 
 constrain :: (Traversable t, Applicative f) => a -> t (a -> f b) -> f ()
 constrain a b = traverse_ ($ a) b
@@ -125,47 +100,71 @@ center (x, y) b = centerX x b >> centerY y b
 group :: [Box (Cell s Double)] -> ST s (Box (Cell s Double))
 group = undefined
 
-box :: ST s (Box (Cell s Double))
-box = do
-  w <- cell
-  h <- cell
-  t <- cell
-  l <- cell
-  b <- cell
-  r <- cell
-  cx <- cell
-  cy <- cell
+row :: Int -> ST s (Box (Cell s Double)) -> ST s [Box (Cell s Double)]
+row n b = do
+  container <- box
 
-  lift2 (\n m -> m - n) l r w
-  lift2 (\n m -> m + n) w l r
-  lift2 (\n m -> m - n) w r l
-  lift2 (\n m -> n + m / 2) l w cx
-  lift2 (\n m -> n - m / 2) cx w l
-  lift2 (\n m -> (m - n) * 2) l cx w
-  lift2 (\n m -> (n - m) * 2) r cx w
+  b1 <- b
+  boxes <- replicateM n b
 
-  lift2 (\n m -> m - n) t b h
-  lift2 (\n m -> m + n) h t b
-  lift2 (\n m -> m - n) h b t
-  lift2 (\n m -> n + m / 2) t h cy
-  lift2 (\n m -> n - m / 2) cy h t
-  lift2 (\n m -> (m - n) * 2) t cy h
-  lift2 (\n m -> (n - m) * 2) b cy h
+  same _height [container, b1]
 
-  return $ Box w h t b l r cx cy
+  watch2
+    (_left container)
+    (_width container)
+    ( \containerLeft containerWidth ->
+        with
+          (_width b1)
+          ( \bWidth ->
+              for_
+                (zip [0 ..] boxes)
+                ( \(x, b') ->
+                    left (containerLeft + ((((containerWidth - ((int2Double n) * bWidth)) / ((int2Double n) - 1)) + bWidth) * x)) b'
+                )
+          )
+    )
 
-data Box a
-  = Box
-      { _width :: a,
-        _height :: a,
-        _top :: a,
-        _bottom :: a,
-        _left :: a,
-        _right :: a,
-        _centerX :: a,
-        _centerY :: a
-      }
-  deriving (Show, Eq, Functor, Foldable, Traversable)
+  pure $ (container : boxes)
+
+runBox :: [Box (Maybe Double)]
+runBox = runST $ do
+  screen <- box
+  constrain screen [top 0, left 0, width 1640, height 893]
+
+  a <- box
+  b <- box
+  c <- box
+
+  same _left [a, screen]
+  same _centerY [a, screen]
+  with (_width screen) (\screenWidth -> constrain a [width (screenWidth / 5), height (screenWidth / 5)])
+
+  same _width [a, b, c]
+  same _height [a, b, c]
+  same _top [a, b, c]
+
+  same _right [c, screen]
+
+  watch2 (_right a) (_left c) (\aRight bLeft -> centerX ((aRight + bLeft) / 2) b)
+
+  combine [a, b, c]
+
+iphone :: [Box (Maybe Double)]
+iphone = runST $ do
+  screen <- box
+  constrain screen [left 0, top 0, width 375, height 812]
+
+  Just screenWidth <- content (_width screen)
+
+  (appRowContainer : appRow) <- row 4 makeApp
+  constrain appRowContainer [left 28, right (screenWidth - 28)]
+  combine appRow
+
+makeApp :: ST s (Box (Cell s Double))
+makeApp = do
+  appIcon <- box
+  constrain appIcon [width 58, height 58]
+  return appIcon
 
 test :: [Box (Maybe Double)]
 test = runST $ do
@@ -189,45 +188,3 @@ test = runST $ do
   unify (_bottom c) (_bottom b)
 
   combine [a, b, c]
-
--- test :: Grid
--- test = grid $ do
---   a <- cell "A" 3 1
---   b <- cell "B" 3 4
---   c <- cell "C" 2 2
-
---   connect (topOf a) (topOf screen)
---   connect (leftOf a) (leftOf screen)
---   connect (rightOf a) (leftOf b)
-
---   connect (topOf b) (topOf screen)
---   connect (rightOf b) (rightOf screen)
-
---   connect (rightOf c) (leftOf b)
---   connect (bottomOf c) (bottomOf b)
-
--- --     -. . ._. . .-
--- --            . . .
--- --        . . . . .
--- --        . ._. . .
-
--- data Direction = X | Y
-
--- data Side
---   = RightOf {getCell :: Cell}
---   | LeftOf {getCell :: Cell}
---   | TopOf {getCell :: Cell}
---   | BottomOf {getCell :: Cell}
---   deriving (Show)
-
--- rightOf :: Cell -> Side
--- rightOf = RightOf
-
--- leftOf :: Cell -> Side
--- leftOf = LeftOf
-
--- topOf :: Cell -> Side
--- topOf = TopOf
-
--- bottomOf :: Cell -> Side
--- bottomOf = BottomOf
